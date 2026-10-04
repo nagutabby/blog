@@ -287,8 +287,8 @@ async function following(request: Request, env: WorkerEnv): Promise<Response> {
 }
 
 function nodeInfoDocument(version: '2.0' | '2.1'): Record<string, unknown> {
-  const software: Record<string, string> = { name: 'sveltekit-blog', version: '1.0.0' };
-  if (version === '2.1') software.repository = 'https://github.com/nagutabby/sveltekit-blog';
+  const software: Record<string, string> = { name: 'blog', version: '1.0.0' };
+  if (version === '2.1') software.repository = 'https://github.com/nagutabby/blog';
   return {
     version,
     software,

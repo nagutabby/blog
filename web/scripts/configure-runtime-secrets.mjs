@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { GetSecretValueCommand, PutSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 
-const secretId = process.argv[2] ?? 'sveltekit-blog/runtime';
+const secretId = process.argv[2] ?? 'blog/runtime';
 const rotateActorKey = process.argv.includes('--rotate-actor-key');
 const client = new SecretsManagerClient({ region: process.env.AWS_REGION ?? 'ap-northeast-1' });
 

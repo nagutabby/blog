@@ -33,23 +33,27 @@ const zoneName = 'app.nagutabby.uk';
 const siteDomain = 'blog.app.nagutabby.uk';
 const siteBaseURL = `https://${siteDomain}`;
 const repoSubject = 'repo:nagutabby@62084485/blog@637631792:ref:refs/heads/main';
+const githubOidcProviderArn = `arn:aws:iam::${account}:oidc-provider/token.actions.githubusercontent.com`;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 export interface BlogStackProps extends StackProps {
-  edgeCertificate: import('aws-cdk-lib/aws-certificatemanager').ICertificate;
+  edgeCertificate?: import('aws-cdk-lib/aws-certificatemanager').ICertificate;
+  deployPublicEdge: boolean;
 }
 
 export class BlogStack extends Stack {
   constructor(scope: Construct, id: string, props: BlogStackProps) {
     super(scope, id, props);
 
-    const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'AppHostedZone', {
-      hostedZoneId: zoneId,
-      zoneName
-    });
+    const hostedZone = props.deployPublicEdge
+      ? route53.HostedZone.fromHostedZoneAttributes(this, 'AppHostedZone', {
+          hostedZoneId: zoneId,
+          zoneName
+        })
+      : undefined;
 
     const followerTable = new dynamodb.Table(this, 'Followers', {
-      tableName: 'sveltekit-blog-followers',
+      tableName: 'blog-followers',
       partitionKey: { name: 'actorId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
@@ -64,7 +68,7 @@ export class BlogStack extends Stack {
     });
 
     const relayTable = new dynamodb.Table(this, 'RelayConnections', {
-      tableName: 'sveltekit-blog-relay-connections',
+      tableName: 'blog-relay-connections',
       partitionKey: { name: 'actorId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
@@ -79,7 +83,7 @@ export class BlogStack extends Stack {
     });
 
     const runtimeSecret = new secretsmanager.Secret(this, 'RuntimeSecrets', {
-      secretName: 'sveltekit-blog/runtime',
+      secretName: 'blog/runtime',
       description: 'Runtime keys and tokens for the blog APIs, including mail settings.',
       generateSecretString: {
         secretStringTemplate: '{}',
@@ -90,7 +94,7 @@ export class BlogStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN
     });
     const originHeaderSecret = new secretsmanager.Secret(this, 'OriginHeaderSecret', {
-      secretName: 'sveltekit-blog/cloudfront-origin-header',
+      secretName: 'blog/cloudfront-origin-header',
       description: 'Shared origin header value used to reject direct API Gateway requests.',
       generateSecretString: {
         passwordLength: 64,
@@ -100,18 +104,18 @@ export class BlogStack extends Stack {
     });
 
     const apiLogs = new logs.LogGroup(this, 'ApiAccessLogs', {
-      logGroupName: '/aws/apigateway/sveltekit-blog',
+      logGroupName: '/aws/apigateway/blog',
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: RemovalPolicy.RETAIN
     });
     const lambdaLogs = new logs.LogGroup(this, 'LambdaLogs', {
-      logGroupName: '/aws/lambda/sveltekit-blog-api',
+      logGroupName: '/aws/lambda/blog-api',
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: RemovalPolicy.RETAIN
     });
 
     const apiFunction = new NodejsFunction(this, 'BlogApiFunction', {
-      functionName: 'sveltekit-blog-api',
+      functionName: 'blog-api',
       entry: path.join(repoRoot, 'web/src/worker/lambda.ts'),
       projectRoot: path.join(repoRoot, 'web'),
       depsLockFilePath: path.join(repoRoot, 'web/pnpm-lock.yaml'),
@@ -141,12 +145,12 @@ export class BlogStack extends Stack {
     originHeaderSecret.grantRead(apiFunction);
 
     const articleNotificationLogs = new logs.LogGroup(this, 'ArticleNotificationLambdaLogs', {
-      logGroupName: '/aws/lambda/sveltekit-blog-article-notification',
+      logGroupName: '/aws/lambda/blog-article-notification',
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: RemovalPolicy.RETAIN
     });
     const articleNotificationFunction = new NodejsFunction(this, 'ArticleNotificationFunction', {
-      functionName: 'sveltekit-blog-article-notification',
+      functionName: 'blog-article-notification',
       entry: path.join(repoRoot, 'web/src/worker/article-notification-lambda.ts'),
       projectRoot: path.join(repoRoot, 'web'),
       depsLockFilePath: path.join(repoRoot, 'web/pnpm-lock.yaml'),
@@ -173,7 +177,7 @@ export class BlogStack extends Stack {
     runtimeSecret.grantRead(articleNotificationFunction);
 
     const httpApi = new HttpApi(this, 'BlogHttpApi', {
-      apiName: 'sveltekit-blog-api',
+      apiName: 'blog-api',
       description: 'Blog API served through the CloudFront distribution.',
       createDefaultStage: false,
       defaultIntegration: new HttpLambdaIntegration('BlogLambdaIntegration', apiFunction)
@@ -199,7 +203,7 @@ export class BlogStack extends Stack {
     });
 
     const articleNotificationHttpApi = new HttpApi(this, 'ArticleNotificationHttpApi', {
-      apiName: 'sveltekit-blog-article-notifications',
+      apiName: 'blog-article-notifications',
       description: 'Bearer-token protected ActivityPub article notification endpoint.',
       createDefaultStage: false
     });
@@ -212,7 +216,7 @@ export class BlogStack extends Stack {
       integration: new HttpLambdaIntegration('ArticleNotificationIntegration', articleNotificationFunction)
     });
     const articleNotificationApiLogs = new logs.LogGroup(this, 'ArticleNotificationApiLogs', {
-      logGroupName: '/aws/apigateway/sveltekit-blog-article-notifications',
+      logGroupName: '/aws/apigateway/blog-article-notifications',
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: RemovalPolicy.RETAIN
     });
@@ -238,7 +242,7 @@ export class BlogStack extends Stack {
     });
 
     const siteBucket = new s3.Bucket(this, 'SiteBucket', {
-      bucketName: 'sveltekit-blog-site-444167236765-ap-northeast-1',
+      bucketName: 'blog-site-444167236765-ap-northeast-1',
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -247,7 +251,7 @@ export class BlogStack extends Stack {
     });
 
     const staticFunction = new cloudfront.Function(this, 'StaticUrlRewrite', {
-      functionName: 'sveltekit-blog-static-url-rewrite',
+      functionName: 'blog-static-url-rewrite',
       code: cloudfront.FunctionCode.fromFile({
         filePath: path.join(repoRoot, 'web/src/worker/cloudfront/static-url-rewrite.js')
       }),
@@ -255,7 +259,7 @@ export class BlogStack extends Stack {
       comment: 'Maps Astro clean URLs to its file-format HTML output.'
     });
     const blockInboxFunction = new cloudfront.Function(this, 'BlockInboxPost', {
-      functionName: 'sveltekit-blog-block-inbox-post',
+      functionName: 'blog-block-inbox-post',
       code: cloudfront.FunctionCode.fromFile({
         filePath: path.join(repoRoot, 'web/src/worker/cloudfront/block-inbox-post.js')
       }),
@@ -278,74 +282,84 @@ export class BlogStack extends Stack {
       responseHeadersPolicy: cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS
     };
 
-    const distribution = new cloudfront.Distribution(this, 'BlogDistribution', {
-      comment: 'Static blog and Hono API for blog.app.nagutabby.uk',
-      domainNames: [siteDomain],
-      certificate: props.edgeCertificate,
-      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
-      sslSupportMethod: cloudfront.SSLMethod.SNI,
-      defaultRootObject: 'index.html',
-      defaultBehavior: {
-        origin: S3BucketOrigin.withOriginAccessControl(siteBucket),
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        responseHeadersPolicy: cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS,
+    if (props.deployPublicEdge && !props.edgeCertificate) {
+      throw new Error('edgeCertificate is required when deployPublicEdge is enabled');
+    }
+
+    const distribution = props.deployPublicEdge
+      ? new cloudfront.Distribution(this, 'BlogDistribution', {
+          comment: 'Static blog and Hono API for blog.app.nagutabby.uk',
+          domainNames: [siteDomain],
+          certificate: props.edgeCertificate!,
+          minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+          sslSupportMethod: cloudfront.SSLMethod.SNI,
+          defaultRootObject: 'index.html',
+          defaultBehavior: {
+            origin: S3BucketOrigin.withOriginAccessControl(siteBucket),
+            allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+            cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+            cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            responseHeadersPolicy: cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS,
+            functionAssociations: [{
+              eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+              function: staticFunction
+            }]
+          },
+          errorResponses: [
+            { httpStatus: 403, responseHttpStatus: 404, responsePagePath: '/404.html', ttl: Duration.seconds(0) },
+            { httpStatus: 404, responseHttpStatus: 404, responsePagePath: '/404.html', ttl: Duration.seconds(0) }
+          ],
+          httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
+          enableIpv6: true
+        })
+      : undefined;
+
+    if (distribution) {
+      distribution.addBehavior('/actor/inbox', apiOrigin, {
+        ...apiBehavior,
         functionAssociations: [{
           eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
-          function: staticFunction
+          function: blockInboxFunction
         }]
-      },
-      errorResponses: [
-        { httpStatus: 403, responseHttpStatus: 404, responsePagePath: '/404.html', ttl: Duration.seconds(0) },
-        { httpStatus: 404, responseHttpStatus: 404, responsePagePath: '/404.html', ttl: Duration.seconds(0) }
-      ],
-      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
-      enableIpv6: true
-    });
-
-    distribution.addBehavior('/actor/inbox', apiOrigin, {
-      ...apiBehavior,
-      functionAssociations: [{
-        eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
-        function: blockInboxFunction
-      }]
-    });
-    distribution.addBehavior('/rpc/*', apiOrigin, apiBehavior);
-    distribution.addBehavior('/.well-known/*', apiOrigin, apiBehavior);
-    distribution.addBehavior('/nodeinfo/*', apiOrigin, apiBehavior);
-    distribution.addBehavior('/actor*', apiOrigin, apiBehavior);
-    distribution.addBehavior('/api/articles/*', apiOrigin, apiBehavior);
-    distribution.addBehavior('/healthz', apiOrigin, apiBehavior);
+      });
+      distribution.addBehavior('/rpc/*', apiOrigin, apiBehavior);
+      distribution.addBehavior('/.well-known/*', apiOrigin, apiBehavior);
+      distribution.addBehavior('/nodeinfo/*', apiOrigin, apiBehavior);
+      distribution.addBehavior('/actor*', apiOrigin, apiBehavior);
+      distribution.addBehavior('/api/articles/*', apiOrigin, apiBehavior);
+      distribution.addBehavior('/healthz', apiOrigin, apiBehavior);
+    }
 
     new s3deploy.BucketDeployment(this, 'DeployStaticSite', {
       sources: [s3deploy.Source.asset(path.join(repoRoot, 'web/dist'))],
       destinationBucket: siteBucket,
-      distribution,
-      distributionPaths: ['/*'],
+      ...(distribution ? { distribution, distributionPaths: ['/*'] } : {}),
       prune: true,
       retainOnDelete: true
     });
 
-    new route53.ARecord(this, 'SiteAliasA', {
-      zone: hostedZone,
-      recordName: 'blog',
-      target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(distribution))
-    });
-    new route53.AaaaRecord(this, 'SiteAliasAAAA', {
-      zone: hostedZone,
-      recordName: 'blog',
-      target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(distribution))
-    });
+    if (distribution && hostedZone) {
+      new route53.ARecord(this, 'SiteAliasA', {
+        zone: hostedZone,
+        recordName: 'blog',
+        target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(distribution))
+      });
+      new route53.AaaaRecord(this, 'SiteAliasAAAA', {
+        zone: hostedZone,
+        recordName: 'blog',
+        target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(distribution))
+      });
+    }
 
-    const provider = new iam.OpenIdConnectProvider(this, 'GitHubActionsOidcProvider', {
-      url: 'https://token.actions.githubusercontent.com',
-      clientIds: ['sts.amazonaws.com']
-    });
+    const provider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
+      this,
+      'GitHubActionsOidcProvider',
+      githubOidcProviderArn
+    );
     const deployRole = new iam.Role(this, 'GitHubActionsDeployRole', {
-      roleName: 'sveltekit-blog-github-deploy',
-      description: 'Allows only pushes to the blog repository main branch to deploy with CDK.',
+      roleName: 'blog-github-deploy',
+      description: 'Allows only pushes to nagutabby/blog main to deploy with CDK.',
       assumedBy: new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
         StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
         StringLike: { 'token.actions.githubusercontent.com:sub': repoSubject }
@@ -363,7 +377,9 @@ export class BlogStack extends Stack {
     }));
 
     new CfnOutput(this, 'SiteUrl', { value: siteBaseURL });
-    new CfnOutput(this, 'DistributionId', { value: distribution.distributionId });
+    if (distribution) {
+      new CfnOutput(this, 'DistributionId', { value: distribution.distributionId });
+    }
     new CfnOutput(this, 'ApiGatewayEndpoint', { value: httpApi.apiEndpoint });
     new CfnOutput(this, 'ArticleNotificationApiEndpoint', {
       value: `${articleNotificationHttpApi.apiEndpoint}/rpc/federation-admin/publish-article-activity`

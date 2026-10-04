@@ -1,6 +1,6 @@
 {
   "$schema": "../web/node_modules/wrangler/config-schema.json",
-  "name": "sveltekit-blog-local",
+  "name": "blog-local",
   "main": "../web/src/worker/index.ts",
   "compatibility_date": "2026-10-03",
   "compatibility_flags": ["nodejs_compat"],
@@ -40,7 +40,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "sveltekit-blog-db",
+      "database_name": "blog-db",
       "database_id": "2b4db5b8-4d5a-43ee-b79d-3037f87cec89",
       "migrations_dir": "db/migrations"
     }

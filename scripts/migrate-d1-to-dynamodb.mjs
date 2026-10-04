@@ -16,8 +16,8 @@ const {
   ScanCommand
 } = requireFromWeb('@aws-sdk/lib-dynamodb');
 const { DynamoDBClient } = requireFromWeb('@aws-sdk/client-dynamodb');
-const followerTable = process.env.FOLLOWER_TABLE ?? 'sveltekit-blog-followers';
-const relayTable = process.env.RELAY_TABLE ?? 'sveltekit-blog-relay-connections';
+const followerTable = process.env.FOLLOWER_TABLE ?? 'blog-followers';
+const relayTable = process.env.RELAY_TABLE ?? 'blog-relay-connections';
 const apply = process.argv.includes('--apply');
 const backupArg = process.argv.indexOf('--backup');
 const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');

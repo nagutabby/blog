@@ -10,7 +10,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: sveltekit-blog-production
+  group: blog-production
   cancel-in-progress: false
 
 jobs:
@@ -38,13 +38,19 @@ jobs:
       - name: Install infrastructure dependencies
         run: pnpm --dir infra install --frozen-lockfile --ignore-scripts
       - name: Configure AWS credentials
+        if: vars.BLOG_RESOURCE_MIGRATION_READY == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::444167236765:role/sveltekit-blog-github-deploy
+          role-to-assume: arn:aws:iam::444167236765:role/blog-github-deploy
           aws-region: ap-northeast-1
       - name: Synthesize and inspect the change
+        if: vars.BLOG_RESOURCE_MIGRATION_READY == 'true'
         run: |
           pnpm --dir infra exec cdk synth --strict
           pnpm --dir infra exec cdk diff
       - name: Deploy stacks
+        if: vars.BLOG_RESOURCE_MIGRATION_READY == 'true'
         run: pnpm --dir infra exec cdk deploy --all --require-approval never
+      - name: Keep production deployment paused during resource migration
+        if: vars.BLOG_RESOURCE_MIGRATION_READY != 'true'
+        run: echo "Deployment skipped; complete the staged resource migration before setting BLOG_RESOURCE_MIGRATION_READY=true."

@@ -20,6 +20,8 @@ The existing monitor distribution, its ACM certificates, and its DNS records are
 
 Run from the repository root:
 
+For an existing production account, follow the resource migration runbook before the first deploy. GitHub Actions skips the deploy step until `BLOG_RESOURCE_MIGRATION_READY=true` is set after the new deployment role and stack are verified.
+
 ```sh
 pnpm --dir web run build
 pnpm --dir infra exec cdk synth --strict
@@ -46,10 +48,16 @@ Content-Type: application/json
 {"articleId":"article-id","changeType":"create"}
 ```
 
-Use `create`, `update`, or `delete` for `changeType`. The token is stored in the `sveltekit-blog/runtime` Secrets Manager secret; it is not included in the repository or API Gateway logs. This endpoint is intentionally callable outside CloudFront. The main blog API continues to require the CloudFront origin header, and its `/rpc/federation-admin/*` route is no longer exposed there.
+Use `create`, `update`, or `delete` for `changeType`. The token is stored in the `blog/runtime` Secrets Manager secret; it is not included in the repository or API Gateway logs. This endpoint is intentionally callable outside CloudFront. The main blog API continues to require the CloudFront origin header, and its `/rpc/federation-admin/*` route is no longer exposed there.
 
-After the first successful manual deploy, GitHub Actions can assume `sveltekit-blog-github-deploy` through OIDC. That role is deliberately restricted to `nagutabby/blog`'s `main` branch and to the CDK bootstrap roles in the two deployment regions.
+After the new deploy role has been created, GitHub Actions can assume `blog-github-deploy` through OIDC. That role is deliberately restricted to `nagutabby/blog`'s `main` branch and to the CDK bootstrap roles in the two deployment regions.
 
 ## State safety
 
 The production stack has termination protection. DynamoDB tables, logs, buckets, and secrets use retain policies; the tables also have deletion protection and point-in-time recovery. Review every `cdk diff` before deployment. The only DNS records managed by this stack are `blog.app.nagutabby.uk` A and AAAA aliases plus the ACM validation record.
+
+## Resource rename migration
+
+The `Blog` and `BlogEdgeCertificate` stacks and `blog-*` resource names are the target state. The migration prepares new resources first, copies and verifies DynamoDB and Secrets Manager data, and syncs the current site objects. The old stacks are then deleted and the new stacks deployed with the same public domain. CloudFront's distribution ID and certificate ARN change, and the site is unavailable while the replacement distribution is deployed. Retained old tables, secrets, and site data stay available for seven days after cutover.
+
+Use the production migration checklist in [`RESOURCE-RENAME.md`](./RESOURCE-RENAME.md). The GitHub OIDC provider is shared by both deploy roles and remains in IAM when the old stack is removed.

@@ -57,7 +57,7 @@
     "wrangler": "^4.147.0"
   },
   "type": "module",
-  "packageManager": "pnpm@11.28.4",
+  "packageManager": "pnpm@12.9.1",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1146.0",
     "@aws-sdk/client-secrets-manager": "^3.1146.0",

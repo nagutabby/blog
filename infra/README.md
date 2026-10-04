@@ -58,6 +58,6 @@ The production stack has termination protection. DynamoDB tables, logs, buckets,
 
 ## Resource rename migration
 
-The `Blog` and `BlogEdgeCertificate` stacks and `blog-*` resource names are the target state. The migration prepares new resources first, copies and verifies DynamoDB and Secrets Manager data, and syncs the current site objects. The old stacks are then deleted and the new stacks deployed with the same public domain. CloudFront's distribution ID and certificate ARN change, and the site is unavailable while the replacement distribution is deployed. Retained old tables, secrets, and site data stay available for seven days after cutover.
+The `Blog` and `BlogEdgeCertificate` stacks and `blog-*` resource names are the target state. The migration prepares new resources first, copies and verifies DynamoDB and Secrets Manager data, and syncs the current site objects. The old stacks are then deleted and the new stacks deployed with the same public domain. CloudFront's distribution ID and certificate ARN change, and the site is unavailable while the replacement distribution is deployed. Rollback tables, secrets, and site data were deleted on 2026-10-04 after full data comparison and an explicit cleanup request.
 
 Use the production migration checklist in [`RESOURCE-RENAME.md`](./RESOURCE-RENAME.md). The GitHub OIDC provider is shared by both deploy roles and remains in IAM when the old stack is removed.

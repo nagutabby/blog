@@ -62,8 +62,10 @@ env CI=true pnpm --dir infra exec cdk deploy --all --profile sso-admin-profile -
 
 Confirm the Route 53 alias points to the new distribution and the certificate is issued. Verify the home page, articles, sitemap, Atom feed, ActivityPub GET routes, inbox 403 behavior, API origin-header protection, and the old-host 301 redirect. An authenticated contact submission sends a real email, and an authenticated article notification sends a real federation message; do not use either as a smoke test. Exercise the GitHub Actions role before enabling `BLOG_RESOURCE_MIGRATION_READY=true` in repository variables.
 
-## 4. Keep rollback data, then clean up
+## 4. Rollback data cleanup (completed 2026-10-04)
 
-Keep the old DynamoDB tables, Secrets Manager secrets, and S3 bucket for seven full days after cutover. Their `RETAIN` policies leave them outside CloudFormation after the old stack is deleted. After the observation window, check that the new service remains healthy, remove deletion protection from the old tables, and delete the old data and bucket. Remove the old OIDC helper Lambda and role resources if they remain after stack deletion; keep the shared GitHub OIDC provider because the new deployment role uses it.
+At the user's request, rollback copies were deleted before the planned seven-day observation window ended. Immediately before cleanup, the read-only comparison found all 3 follower records and all 10 relay records identical between old and new tables, both secret values matched without printing them, and CloudFront was serving the new bucket. The old unversioned site bucket contained 640 objects (36,768,337 bytes).
+
+Deleted the old `sveltekit-blog-followers` and `sveltekit-blog-relay-connections` tables, `sveltekit-blog/runtime` and `sveltekit-blog/cloudfront-origin-header` secrets, and `sveltekit-blog-site-444167236765-ap-northeast-1` bucket. The live `blog-*` tables still contain 3 followers and 10 relays; the public site and `/healthz` returned HTTP 200 after cleanup. No old-prefixed tables, secrets, bucket, or OIDC helper Lambda remained. Keep the shared GitHub OIDC provider because the new deployment role uses it.
 
 The one-time source D1 export retains its historical database name in `scripts/migrate-d1-to-dynamodb.mjs` and the migration record. Do not point Wrangler at that deleted remote D1; `backend/wrangler.jsonc` and `make db-migrate` use the separate local `blog-db` simulator.

@@ -16,8 +16,8 @@ describe('静的フィード', () => {
     const xml = createSitemap(articles, reviews);
     const result = new XMLParser().parse(xml);
     expect(result.urlset.url).toHaveLength(3);
-    expect(result.urlset.url[0].loc).toBe('https://blog.nagutabby.uk/articles/first-post');
-    expect(result.urlset.url[2].loc).toBe('https://blog.nagutabby.uk/reviews/book-review');
+    expect(result.urlset.url[0].loc).toBe('https://blog.app.nagutabby.uk/articles/first-post');
+    expect(result.urlset.url[2].loc).toBe('https://blog.app.nagutabby.uk/reviews/book-review');
     expect(result.urlset.url[0].lastmod).toBe('2025-04-01T00:00:00.000Z');
   });
 
@@ -25,7 +25,7 @@ describe('静的フィード', () => {
     const result = new XMLParser({ ignoreAttributes: false }).parse(createAtomFeed(articles, reviews));
     expect(result.feed.entry).toHaveLength(3);
     expect(result.feed.entry[0].title).toBe('First post');
-    expect(result.feed.entry[0].link['@_href']).toBe('https://blog.nagutabby.uk/articles/first-post');
+    expect(result.feed.entry[0].link['@_href']).toBe('https://blog.app.nagutabby.uk/articles/first-post');
     expect(result.feed.entry[2].category['@_term']).toBe('review');
     expect(result.feed.updated).toBe('2025-04-02T00:00:00.000Z');
   });

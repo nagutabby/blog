@@ -18,16 +18,16 @@
 
 <nav class="flex overflow-x-auto navbar p-0 gap-x-1 md:gap-x-2" style="view-transition-name: main-nav;">
   <a href="/" class="btn btn-ghost flex md:btn-lg" aria-label="ホーム">
-    <span aria-hidden="true">⌂</span><span>ホーム</span>
+    <span>ホーム</span>
   </a>
   <a href="/slides" class="btn btn-ghost flex md:btn-lg" aria-label="スライド">
-    <span aria-hidden="true">▤</span><span>スライド</span>
+    <span>スライド</span>
   </a>
   <a href="/reviews" class="btn btn-ghost flex md:btn-lg" aria-label="レビュー">
-    <span aria-hidden="true">▣</span><span>レビュー</span>
+    <span>レビュー</span>
   </a>
   <button class="btn btn-ghost flex md:btn-lg" aria-label="検索" onclick={openSearch}>
-    <span aria-hidden="true">⌕</span><span>検索</span>
+    <span>検索</span>
   </button>
 </nav>
 

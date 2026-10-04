@@ -1,6 +1,6 @@
 # astro-svelte-blog
 
-Astro + Svelte (`web/`)で構築したブログです。フロントエンドは静的出力し、HonoのCloudflare WorkerがActivityPub API、お問い合わせAPI、記事公開通知APIを提供します。
+Astro + Svelte (`web/`)で構築したブログです。フロントエンドは静的出力し、AWS 上の CloudFront と S3 から配信します。Hono API は Lambda と API Gateway で動作します。
 
 ## アーキテクチャ
 
@@ -8,20 +8,18 @@ Astro + Svelte (`web/`)で構築したブログです。フロントエンドは
 外部リクエスト
      │
      ▼
-Cloudflare Worker (Hono + 静的アセット)
-     ├─ /actor*, /.well-known/*, /nodeinfo/*, /api/articles/*  ActivityPub
-     ├─ /rpc/contact/submit                                    お問い合わせ
-     ├─ /rpc/federation-admin/publish-article-activity         記事公開通知
-     └─ その他のページ・画像                                   Astro静的出力
+CloudFront ── 静的ページ・画像 ── S3
      │
-     ▼
-Cloudflare D1
+     └─ API パス ── API Gateway ── Lambda (Hono)
+                                  ├─ ActivityPub
+                                  ├─ お問い合わせ・記事通知
+                                  └─ DynamoDB (Follower / RelayConnection)
 ```
 
-- Workerのエントリーポイントは`web/src/worker/index.ts`、設定は[`backend/wrangler.jsonc`](backend/wrangler.jsonc)です。静的アセットは`web/dist/`から同じWorker経由で配信します。
-- 記事・書評のMarkdownは`backend/content/`にあり、AstroのビルドとWorker用の記事メタデータ生成で読み込みます。MarkdownのHTMLレンダリングは引き続きAstro側で行います。
-- D1のスキーマとマイグレーションは`backend/db/migrations/`にあります。ローカル開発と本番で同じD1バインディングを使います。
-- ローカル開発、API、D1マイグレーションの手順は[`backend/README.md`](backend/README.md)を参照してください。
+- AWS リソースは [`infra/`](infra/README.md) の CDK で管理します。本番サイトは `https://blog.app.nagutabby.uk` です。
+- API ハンドラーは [`web/src/worker/`](web/src/worker/) にあり、Lambda 用アダプターが Hono アプリを実行します。
+- 記事・書評の Markdown は `backend/content/` にあり、Astro のビルドと記事メタデータ生成で読み込みます。
+- ローカル開発と本番構成は [`backend/README.md`](backend/README.md) を参照してください。
 
 ## ライセンス
 

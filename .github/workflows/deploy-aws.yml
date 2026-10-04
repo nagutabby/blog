@@ -1,0 +1,50 @@
+name: Deploy blog to AWS
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sveltekit-blog-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            infra/pnpm-lock.yaml
+      - name: Install web dependencies
+        run: pnpm --dir web install --frozen-lockfile
+      - name: Check, test, and build the site
+        run: |
+          pnpm --dir web run check
+          pnpm --dir web test
+          pnpm --dir web build
+      - name: Install infrastructure dependencies
+        run: pnpm --dir infra install --frozen-lockfile --ignore-scripts
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::444167236765:role/sveltekit-blog-github-deploy
+          aws-region: ap-northeast-1
+      - name: Synthesize and inspect the change
+        run: |
+          pnpm --dir infra exec cdk synth --strict
+          pnpm --dir infra exec cdk diff
+      - name: Deploy stacks
+        run: pnpm --dir infra exec cdk deploy --require-approval never

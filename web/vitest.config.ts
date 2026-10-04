@@ -7,6 +7,7 @@ import path from 'node:path';
 export default defineConfig({
   plugins: [tailwindcss(), svelte(), svelteTesting()],
   resolve: {
+    conditions: ['node'],
     alias: {
       '$lib': path.resolve(process.cwd(), 'src/lib')
     }

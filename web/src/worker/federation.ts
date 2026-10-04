@@ -1,12 +1,4 @@
-import {
-  countActiveFollowers,
-  getFollowerByActorID,
-  listActiveFollowerActorIDs,
-  listRelayConnections,
-  unfollowByActorID,
-  upsertFollower,
-  upsertRelayConnectionAccepted
-} from './db';
+import type { Follower } from './db';
 import { getArticle, listArticles, type Article } from './content';
 import { normalizePEM, signHTTPRequest, verifyHTTPRequest } from './crypto';
 import type { WorkerEnv } from './bindings';
@@ -46,7 +38,7 @@ const acknowledgedActivityTypes = new Set([
 ]);
 
 function siteBaseURL(env: WorkerEnv): string {
-  return (env.SITE_BASE_URL || 'https://blog.nagutabby.uk').replace(/\/$/, '');
+  return (env.SITE_BASE_URL || 'https://blog.app.nagutabby.uk').replace(/\/$/, '');
 }
 
 function actorURL(env: WorkerEnv): string {
@@ -239,7 +231,7 @@ async function followers(request: Request, env: WorkerEnv): Promise<Response> {
   const rawPage = url.searchParams.get('page');
   try {
     if (rawPage === null || rawPage === '') {
-      const totalItems = await countActiveFollowers(env.DB);
+      const totalItems = await env.DB.countActiveFollowers();
       return activityJSON(request, {
         '@context': 'https://www.w3.org/ns/activitystreams',
         id: collectionURL,
@@ -252,8 +244,7 @@ async function followers(request: Request, env: WorkerEnv): Promise<Response> {
     if (!pageNumber || (pageNumber - 1) * collectionPageSize > Number.MAX_SAFE_INTEGER - collectionPageSize) {
       return plainResponse(400, 'Invalid page parameter');
     }
-    const actorIDs = await listActiveFollowerActorIDs(
-      env.DB,
+    const actorIDs = await env.DB.listActiveFollowerActorIDs(
       collectionPageSize + 1,
       (pageNumber - 1) * collectionPageSize
     );
@@ -269,22 +260,26 @@ async function followers(request: Request, env: WorkerEnv): Promise<Response> {
 async function following(request: Request, env: WorkerEnv): Promise<Response> {
   const collectionURL = `${actorURL(env)}/following`;
   try {
-    const connections = await listRelayConnections(env.DB);
-    const actorIDs = connections.filter((connection) => connection.connected).map((connection) => connection.actorId);
     const rawPage = new URL(request.url).searchParams.get('page');
     if (rawPage === null || rawPage === '') {
+      const totalItems = await env.DB.countConnectedRelayConnections();
       return activityJSON(request, {
         '@context': 'https://www.w3.org/ns/activitystreams',
         id: collectionURL,
         type: 'OrderedCollection',
-        totalItems: actorIDs.length,
+        totalItems,
         first: `${collectionURL}?page=1`
       });
     }
     const pageNumber = parsePageNumber(rawPage);
     if (!pageNumber) return plainResponse(400, 'Invalid page parameter');
-    const page = paginate(actorIDs, pageNumber, collectionPageSize);
-    return writeCollectionPage(request, collectionURL, pageNumber, page.items, page.hasMore);
+    const actorIDs = await env.DB.listConnectedRelayActorIDs(
+      collectionPageSize + 1,
+      (pageNumber - 1) * collectionPageSize
+    );
+    const hasMore = actorIDs.length > collectionPageSize;
+    if (hasMore) actorIDs.length = collectionPageSize;
+    return writeCollectionPage(request, collectionURL, pageNumber, actorIDs, hasMore);
   } catch (error) {
     console.error(JSON.stringify({ message: 'following collection query failed', error: String(error) }));
     return plainResponse(500, 'Internal Server Error');
@@ -431,9 +426,9 @@ async function handleDelete(
   const objectID = deletedObjectID(activity.object);
   if (!objectID || objectID !== activity.actor) return new Response(null, { status: 202 });
 
-  let existing: Awaited<ReturnType<typeof getFollowerByActorID>>;
+  let existing: Follower | null;
   try {
-    existing = await getFollowerByActorID(env.DB, activity.actor);
+    existing = await env.DB.getFollowerByActorID(activity.actor);
   } catch {
     return new Response(null, { status: 202 });
   }
@@ -448,7 +443,7 @@ async function handleDelete(
   }
 
   try {
-    await unfollowByActorID(env.DB, {
+    await env.DB.unfollowByActorID({
       actorId: activity.actor,
       inbox: existing.inbox,
       publicKeyPem: existing.publicKeyPem,
@@ -468,7 +463,7 @@ async function handleFollow(
   actorInfo: RemoteActor
 ): Promise<Response> {
   try {
-    await upsertFollower(env.DB, {
+    await env.DB.upsertFollower({
       actorId: activity.actor,
       inbox: actorInfo.inbox,
       publicKeyPem: actorInfo.publicKey.publicKeyPem,
@@ -499,7 +494,7 @@ async function handleUndo(
   }
 
   try {
-    await unfollowByActorID(env.DB, {
+    await env.DB.unfollowByActorID({
       actorId: activity.actor,
       inbox: actorInfo.inbox,
       publicKeyPem: actorInfo.publicKey.publicKeyPem,
@@ -527,7 +522,7 @@ async function handleAccept(
     return plainResponse(400, 'Invalid Accept activity');
   }
   try {
-    await upsertRelayConnectionAccepted(env.DB, {
+    await env.DB.upsertRelayConnectionAccepted({
       actorId: activity.actor,
       inbox: actorInfo.inbox,
       now: nowTimestamp()

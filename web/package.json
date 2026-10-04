@@ -11,7 +11,8 @@
     "build": "node scripts/generate-worker-content.mjs && astro build && node scripts/prune-private-static-output.mjs && node scripts/optimize-static-images.mjs && node scripts/inline-critical-css.mjs && node scripts/generate-service-worker.mjs",
     "preview": "astro preview",
     "check": "node scripts/generate-worker-content.mjs && astro check",
-    "deploy": "pnpm run build && wrangler deploy --config ../backend/wrangler.jsonc",
+    "deploy": "pnpm run deploy:aws",
+    "deploy:aws": "pnpm run build && pnpm --dir ../infra exec cdk deploy --all --require-approval broadening",
     "test:unit": "node scripts/generate-worker-content.mjs && vitest run",
     "test": "node scripts/generate-worker-content.mjs && vitest run"
   },
@@ -30,6 +31,7 @@
     "astro": "^7.3.5",
     "beasties": "^0.5.4",
     "daisyui": "^5.7.43",
+    "esbuild": "^0.28.1",
     "fast-xml-parser": "^5.11.1",
     "gray-matter": "^4.0.3",
     "jsdom": "^30.1.1",
@@ -57,6 +59,9 @@
   "type": "module",
   "packageManager": "pnpm@11.21.0",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1145.0",
+    "@aws-sdk/client-secrets-manager": "^3.1145.0",
+    "@aws-sdk/lib-dynamodb": "^3.1145.0",
     "@hono/zod-validator": "^0.9.1",
     "canonicalize": "^5.1.0",
     "hono": "^4.13.12",

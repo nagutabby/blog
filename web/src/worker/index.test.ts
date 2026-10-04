@@ -1,9 +1,12 @@
+// @vitest-environment node
+
 import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import app from './index';
+import { app } from './index';
+import { articleNotificationApp } from './article-notification';
 import { listArticles } from './content';
 import { signHTTPRequest, verifyHTTPRequest } from './crypto';
-import { FakeD1, makeWorkerEnv, seedFollower, siteBaseURL } from './test-utils';
+import { FakeBlogDatabase, makeWorkerEnv, seedFollower, siteBaseURL } from './test-utils';
 
 vi.stubGlobal('crypto', webcrypto);
 
@@ -35,6 +38,10 @@ function makeRequest(path: string, init?: RequestInit): Request {
 
 async function request(path: string, init: RequestInit | undefined, env = makeWorkerEnv()): Promise<Response> {
   return app.fetch(makeRequest(path, init), env);
+}
+
+async function notificationRequest(path: string, init: RequestInit | undefined, env = makeWorkerEnv()): Promise<Response> {
+  return articleNotificationApp.fetch(makeRequest(path, init), env);
 }
 
 async function signedInboxRequest(activity: unknown, actorID: string, privateKeyPEM: string): Promise<Request> {
@@ -81,7 +88,7 @@ describe('Hono Worker routes', () => {
   });
 
   it('returns ActivityPub follower pages and article notes', async () => {
-    const db = new FakeD1();
+    const db = new FakeBlogDatabase();
     for (let index = 0; index < 21; index += 1) {
       seedFollower(db, `https://social.example/users/${index}`, 'unused-public-key');
     }
@@ -171,20 +178,33 @@ describe('Hono Worker routes', () => {
     expect(payload.html).toContain('&lt;script&gt;alert(&#34;x&#34;)&lt;/script&gt;');
   });
 
+  it('does not expose article publication notifications on the main API', async () => {
+    const response = await request('/rpc/federation-admin/publish-article-activity', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test-admin-token',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ articleId: 'article', changeType: 'delete' })
+    });
+
+    expect(response.status).toBe(404);
+  });
+
   it('requires the Bearer scheme on federation admin requests', async () => {
     const unsetEnv = makeWorkerEnv();
     unsetEnv.FEDERATION_ADMIN_TOKEN = '';
-    const rawToken = await request('/rpc/federation-admin/publish-article-activity', {
+    const rawToken = await notificationRequest('/rpc/federation-admin/publish-article-activity', {
       method: 'POST',
       headers: { Authorization: 'test-admin-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({ articleId: 'article', changeType: 'delete' })
     });
-    const wrongToken = await request('/rpc/federation-admin/publish-article-activity', {
+    const wrongToken = await notificationRequest('/rpc/federation-admin/publish-article-activity', {
       method: 'POST',
       headers: { Authorization: 'Bearer wrong-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({ articleId: 'article', changeType: 'delete' })
     });
-    const unsetToken = await request('/rpc/federation-admin/publish-article-activity', {
+    const unsetToken = await notificationRequest('/rpc/federation-admin/publish-article-activity', {
       method: 'POST',
       headers: { Authorization: 'Bearer any-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({ articleId: 'article', changeType: 'delete' })
@@ -196,7 +216,7 @@ describe('Hono Worker routes', () => {
   });
 
   it('publishes a signed article activity to connected relays with a valid Bearer token', async () => {
-    const db = new FakeD1();
+    const db = new FakeBlogDatabase();
     db.relayConnections.set('https://relay.example/actor', {
       id: 1,
       actorId: 'https://relay.example/actor',
@@ -214,7 +234,7 @@ describe('Hono Worker routes', () => {
     const article = listArticles()[0];
     expect(article).toBeDefined();
 
-    const response = await request('/rpc/federation-admin/publish-article-activity', {
+    const response = await notificationRequest('/rpc/federation-admin/publish-article-activity', {
       method: 'POST',
       headers: {
         Authorization: 'Bearer test-admin-token',
@@ -243,7 +263,7 @@ describe('Hono Worker routes', () => {
   });
 
   it('continues publishing when one relay delivery fails', async () => {
-    const db = new FakeD1();
+    const db = new FakeBlogDatabase();
     for (const [index, actorID] of ['https://relay-a.example/actor', 'https://relay-b.example/actor'].entries()) {
       db.relayConnections.set(actorID, {
         id: index + 1,
@@ -267,7 +287,7 @@ describe('Hono Worker routes', () => {
     const article = listArticles()[0];
     expect(article).toBeDefined();
 
-    const response = await request('/rpc/federation-admin/publish-article-activity', {
+    const response = await notificationRequest('/rpc/federation-admin/publish-article-activity', {
       method: 'POST',
       headers: {
         Authorization: 'Bearer test-admin-token',
@@ -282,7 +302,7 @@ describe('Hono Worker routes', () => {
 
   it('verifies a signed self-Delete before unfollowing a known follower', async () => {
     const actorID = 'https://social.example/users/alice';
-    const db = new FakeD1();
+    const db = new FakeBlogDatabase();
     const keys = await makeKeyPair();
     seedFollower(db, actorID, keys.publicKeyPEM);
     const inboxRequest = await signedInboxRequest({
@@ -300,7 +320,7 @@ describe('Hono Worker routes', () => {
   it('records a signed Follow and sends a signed Accept to the remote inbox', async () => {
     const actorID = 'https://social.example/users/alice';
     const remoteInbox = 'https://social.example/inbox';
-    const db = new FakeD1();
+    const db = new FakeBlogDatabase();
     const remoteKeys = await makeKeyPair();
     const localKeys = await makeKeyPair();
     const env = makeWorkerEnv(db);
@@ -342,7 +362,7 @@ describe('Hono Worker routes', () => {
     const followerKeys = await makeKeyPair();
     const relayKeys = await makeKeyPair();
     const localKeys = await makeKeyPair();
-    const db = new FakeD1();
+    const db = new FakeBlogDatabase();
     seedFollower(db, followerID, followerKeys.publicKeyPEM);
     const env = makeWorkerEnv(db);
     env.ACTOR_PRIVATE_KEY_PEM = localKeys.privateKeyPEM;

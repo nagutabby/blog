@@ -1,161 +1,102 @@
 import type { WorkerEnv } from './bindings';
-import type { Follower, RelayConnection } from './db';
+import type { BlogDatabase, Follower, RelayConnection } from './db';
 
-export const siteBaseURL = 'https://blog.nagutabby.uk';
+export const siteBaseURL = 'https://blog.app.nagutabby.uk';
 
-export class FakeD1 implements D1Database {
+export class FakeBlogDatabase implements BlogDatabase {
   readonly followers = new Map<string, Follower>();
   readonly relayConnections = new Map<string, RelayConnection>();
   failQueries = false;
-  private nextFollowerID = 1;
-  private nextRelayID = 1;
 
-  prepare(query: string): FakeD1Statement {
-    return new FakeD1Statement(this, query);
+  private failIfRequested(): void {
+    if (this.failQueries) throw new Error('simulated DynamoDB failure');
   }
 
-  async batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
-    return Promise.all(statements.map((statement) => statement.run<T>()));
+  async countActiveFollowers(): Promise<number> {
+    this.failIfRequested();
+    return [...this.followers.values()].filter((row) => row.following).length;
   }
 
-  async exec(_query: string): Promise<D1ExecResult> {
-    if (this.failQueries) throw new Error('simulated D1 failure');
-    return { count: 0, duration: 0 };
+  async listActiveFollowerActorIDs(limit: number, offset: number): Promise<string[]> {
+    this.failIfRequested();
+    return [...this.followers.values()]
+      .filter((row) => row.following)
+      .sort((left, right) => left.id - right.id)
+      .slice(offset, offset + limit)
+      .map(({ actorId }) => actorId);
   }
 
-  withSession(_constraintOrBookmark?: D1SessionBookmark | D1SessionConstraint): D1DatabaseSession {
-    return {
-      prepare: (query) => this.prepare(query),
-      batch: <T = unknown>(statements: D1PreparedStatement[]) => this.batch<T>(statements),
-      getBookmark: () => null
-    };
+  async getFollowerByActorID(actorID: string): Promise<Follower | null> {
+    this.failIfRequested();
+    return this.followers.get(actorID) ?? null;
   }
 
-  async dump(): Promise<ArrayBuffer> {
-    if (this.failQueries) throw new Error('simulated D1 failure');
-    return new ArrayBuffer(0);
+  async upsertFollower(params: Pick<Follower, 'actorId' | 'inbox' | 'publicKeyPem'> & { now: string }): Promise<void> {
+    this.failIfRequested();
+    const existing = this.followers.get(params.actorId);
+    this.followers.set(params.actorId, {
+      id: existing?.id ?? Math.max(0, ...[...this.followers.values()].map((row) => row.id)) + 1,
+      actorId: params.actorId,
+      inbox: params.inbox,
+      publicKeyPem: params.publicKeyPem,
+      following: true,
+      createdAt: existing?.createdAt ?? params.now,
+      updatedAt: params.now
+    });
   }
 
-  statement(query: string, parameters: unknown[]): unknown {
-    if (this.failQueries) throw new Error('simulated D1 failure');
-    if (query.includes('SELECT count(*) AS count FROM "Follower"')) {
-      return { count: [...this.followers.values()].filter((row) => row.following).length };
-    }
-    if (query.includes('SELECT * FROM "Follower" WHERE "actorId" = ?')) {
-      return this.followers.get(String(parameters[0])) ?? null;
-    }
-    if (query.includes('SELECT "actorId" FROM "Follower"')) {
-      const offset = Number(parameters[1]);
-      const limit = Number(parameters[0]);
-      return [...this.followers.values()]
-        .filter((row) => row.following)
-        .sort((left, right) => left.id - right.id)
-        .slice(offset, offset + limit)
-        .map(({ actorId }) => ({ actorId }));
-    }
-    if (query.includes('SELECT * FROM "RelayConnection"')) {
-      return [...this.relayConnections.values()].sort((left, right) => left.id - right.id);
-    }
-    if (query.includes('INSERT INTO "Follower"')) {
-      const actorId = String(parameters[0]);
-      const inbox = String(parameters[1]);
-      const publicKeyPem = String(parameters[2]);
-      const now = String(parameters[3]);
-      const existing = this.followers.get(actorId);
-      this.followers.set(actorId, {
-        id: existing?.id ?? this.nextFollowerID++,
-        actorId,
-        inbox,
-        publicKeyPem,
-        following: true,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now
-      });
-      return { changes: 1 };
-    }
-    if (query.includes('UPDATE "Follower"')) {
-      const inbox = String(parameters[0]);
-      const publicKeyPem = String(parameters[1]);
-      const now = String(parameters[2]);
-      const actorId = String(parameters[3]);
-      const existing = this.followers.get(actorId);
-      if (!existing) return { changes: 0 };
-      this.followers.set(actorId, { ...existing, inbox, publicKeyPem, following: false, updatedAt: now });
-      return { changes: 1 };
-    }
-    if (query.includes('INSERT INTO "RelayConnection"')) {
-      const actorId = String(parameters[0]);
-      const inbox = String(parameters[1]);
-      const now = String(parameters[2]);
-      const existing = this.relayConnections.get(actorId);
-      this.relayConnections.set(actorId, {
-        id: existing?.id ?? this.nextRelayID++,
-        actorId,
-        inbox,
-        connected: true,
-        lastAcceptedAt: now,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now
-      });
-      return { changes: 1 };
-    }
-    throw new Error(`Unexpected SQL in Worker test: ${query}`);
+  async unfollowByActorID(params: Pick<Follower, 'actorId' | 'inbox' | 'publicKeyPem'> & { now: string }): Promise<void> {
+    this.failIfRequested();
+    const existing = this.followers.get(params.actorId);
+    if (!existing) throw new Error('follower not found');
+    this.followers.set(params.actorId, {
+      ...existing,
+      inbox: params.inbox,
+      publicKeyPem: params.publicKeyPem,
+      following: false,
+      updatedAt: params.now
+    });
+  }
+
+  async countConnectedRelayConnections(): Promise<number> {
+    this.failIfRequested();
+    return [...this.relayConnections.values()].filter((row) => row.connected).length;
+  }
+
+  async listConnectedRelayActorIDs(limit: number, offset: number): Promise<string[]> {
+    this.failIfRequested();
+    return [...this.relayConnections.values()]
+      .filter((row) => row.connected)
+      .sort((left, right) => left.id - right.id)
+      .slice(offset, offset + limit)
+      .map(({ actorId }) => actorId);
+  }
+
+  async listConnectedRelayConnections(): Promise<RelayConnection[]> {
+    this.failIfRequested();
+    return [...this.relayConnections.values()]
+      .filter((row) => row.connected)
+      .sort((left, right) => left.id - right.id);
+  }
+
+  async upsertRelayConnectionAccepted(params: { actorId: string; inbox: string; now: string }): Promise<void> {
+    this.failIfRequested();
+    const existing = this.relayConnections.get(params.actorId);
+    this.relayConnections.set(params.actorId, {
+      id: existing?.id ?? Math.max(0, ...[...this.relayConnections.values()].map((row) => row.id)) + 1,
+      actorId: params.actorId,
+      inbox: params.inbox,
+      connected: true,
+      lastAcceptedAt: params.now,
+      createdAt: existing?.createdAt ?? params.now,
+      updatedAt: params.now
+    });
   }
 }
 
-class FakeD1Statement implements D1PreparedStatement {
-  private parameters: unknown[] = [];
-
-  constructor(private readonly db: FakeD1, private readonly query: string) {}
-
-  bind(...parameters: unknown[]): this {
-    this.parameters = parameters;
-    return this;
-  }
-
-  async first<T>(columnName?: string): Promise<T | null> {
-    void columnName;
-    return (this.db.statement(this.query, this.parameters) as T | null) ?? null;
-  }
-
-  async all<T>(): Promise<D1Result<T>> {
-    const results = this.db.statement(this.query, this.parameters) as T[];
-    return { results, success: true, meta: {} } as D1Result<T>;
-  }
-
-  async run<T>(): Promise<D1Result<T>> {
-    const changes = this.db.statement(this.query, this.parameters) as { changes: number };
-    return {
-      results: [],
-      success: true,
-      meta: {
-        duration: 0,
-        size_after: 0,
-        rows_read: 0,
-        rows_written: changes.changes,
-        last_row_id: 0,
-        changed_db: changes.changes > 0,
-        changes: changes.changes
-      }
-    } as D1Result<T>;
-  }
-
-  async raw<T = unknown[]>(options?: { columnNames?: false }): Promise<T[]>;
-  async raw<T = unknown[]>(options: { columnNames: true }): Promise<[string[], ...T[]]>;
-  async raw<T = unknown[]>(options?: { columnNames?: boolean }): Promise<T[] | [string[], ...T[]]> {
-    const results = this.db.statement(this.query, this.parameters) as T[];
-    if (options?.columnNames) return [[], ...results];
-    return results;
-  }
-}
-
-export function makeWorkerEnv(db = new FakeD1()): WorkerEnv {
+export function makeWorkerEnv(db = new FakeBlogDatabase()): WorkerEnv {
   return {
     DB: db,
-    ASSETS: {
-      fetch: async () => new Response(null, { status: 404 }),
-      connect: () => { throw new Error('Assets binding does not support sockets'); }
-    },
     SITE_BASE_URL: siteBaseURL,
     ACTOR_PUBLIC_KEY_PEM: '',
     ACTOR_PRIVATE_KEY_PEM: '',
@@ -166,7 +107,7 @@ export function makeWorkerEnv(db = new FakeD1()): WorkerEnv {
   };
 }
 
-export function seedFollower(db: FakeD1, actorId: string, publicKeyPem: string): Follower {
+export function seedFollower(db: FakeBlogDatabase, actorId: string, publicKeyPem: string): Follower {
   const follower: Follower = {
     id: db.followers.size + 1,
     actorId,

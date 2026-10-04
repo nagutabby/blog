@@ -2,9 +2,8 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { getArticle } from './content';
-import { listRelayConnections } from './db';
 import { constantTimeTokenMatches, signActivity, signHTTPRequest } from './crypto';
-import type { WorkerEnv } from './bindings';
+import type { FederationAdminEnv, WorkerEnv } from './bindings';
 
 const contactRoutes = new Hono<{ Bindings: WorkerEnv }>().post(
   '/submit',
@@ -66,7 +65,7 @@ const contactRoutes = new Hono<{ Bindings: WorkerEnv }>().post(
   }
 );
 
-const federationAdminAuth: MiddlewareHandler<{ Bindings: WorkerEnv }> = async (context, next) => {
+const federationAdminAuth: MiddlewareHandler<{ Bindings: FederationAdminEnv }> = async (context, next) => {
   const expected = context.env.FEDERATION_ADMIN_TOKEN || '';
   const authorization = context.req.header('Authorization') ?? '';
   const hasBearerScheme = authorization.startsWith('Bearer ');
@@ -77,7 +76,7 @@ const federationAdminAuth: MiddlewareHandler<{ Bindings: WorkerEnv }> = async (c
   return next();
 };
 
-const federationAdminRoutes = new Hono<{ Bindings: WorkerEnv }>()
+export const federationAdminRoutes = new Hono<{ Bindings: FederationAdminEnv }>()
   .use('/publish-article-activity', federationAdminAuth)
   .post(
     '/publish-article-activity',
@@ -87,7 +86,7 @@ const federationAdminRoutes = new Hono<{ Bindings: WorkerEnv }>()
     })),
     async (context) => {
       const { articleId, changeType } = context.req.valid('json');
-      const base = (context.env.SITE_BASE_URL || 'https://blog.nagutabby.uk').replace(/\/$/, '');
+      const base = (context.env.SITE_BASE_URL || 'https://blog.app.nagutabby.uk').replace(/\/$/, '');
       let object: Record<string, unknown>;
       let type: 'Create' | 'Update' | 'Delete';
       let suffix: string;
@@ -128,7 +127,7 @@ const federationAdminRoutes = new Hono<{ Bindings: WorkerEnv }>()
         const signature = await signActivity(activityBase, context.env.ACTOR_PRIVATE_KEY_PEM || '');
         const activity = { ...activityBase, signature };
         const body = JSON.stringify(activity);
-        const relays = (await listRelayConnections(context.env.DB)).filter((relay) => relay.connected);
+        const relays = await context.env.DB.listConnectedRelayConnections();
         for (const relay of relays) {
           try {
             const headers = await signHTTPRequest(
@@ -169,8 +168,7 @@ const federationAdminRoutes = new Hono<{ Bindings: WorkerEnv }>()
   );
 
 const rpcRoutes = new Hono<{ Bindings: WorkerEnv }>()
-  .route('/contact', contactRoutes)
-  .route('/federation-admin', federationAdminRoutes);
+  .route('/contact', contactRoutes);
 
 export type RpcAppType = typeof rpcRoutes;
 export { rpcRoutes };

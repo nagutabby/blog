@@ -13,7 +13,7 @@ const contactServiceProxy = {
 };
 
 export default defineConfig({
-  site: 'https://blog.nagutabby.uk',
+  site: 'https://blog.app.nagutabby.uk',
   output: 'static',
   publicDir: './static',
   outDir: './dist',

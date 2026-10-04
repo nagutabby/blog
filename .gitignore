@@ -7,3 +7,8 @@ private.pem
 public.pem
 .obsidian
 /private/
+/backend/migration-backups/
+/.cloudflare/
+/.pnpm-store/
+/.wrangler/
+/infra/cdk.out/

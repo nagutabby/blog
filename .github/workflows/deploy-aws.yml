@@ -47,4 +47,4 @@ jobs:
           pnpm --dir infra exec cdk synth --strict
           pnpm --dir infra exec cdk diff
       - name: Deploy stacks
-        run: pnpm --dir infra exec cdk deploy --require-approval never
+        run: pnpm --dir infra exec cdk deploy --all --require-approval never

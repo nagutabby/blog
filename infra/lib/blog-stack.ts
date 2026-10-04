@@ -32,7 +32,7 @@ const zoneId = 'Z08304752J8CINZWOOEB3';
 const zoneName = 'app.nagutabby.uk';
 const siteDomain = 'blog.app.nagutabby.uk';
 const siteBaseURL = `https://${siteDomain}`;
-const repoSubject = 'repo:nagutabby/sveltekit-blog:ref:refs/heads/main';
+const repoSubject = 'repo:nagutabby/blog:ref:refs/heads/main';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 export interface BlogStackProps extends StackProps {

@@ -12,7 +12,7 @@ This project manages the production blog in `ap-northeast-1` and its CloudFront 
 - Runtime Secrets Manager secret and generated CloudFront origin secret
 - Route 53 A/AAAA Alias records in the existing `app.nagutabby.uk` hosted zone
 - ACM DNS-validated certificate in `us-east-1`
-- GitHub OIDC provider and a deploy role trusted only for `nagutabby/sveltekit-blog` `main`
+- GitHub OIDC provider and a deploy role trusted only for `nagutabby/blog` `main`
 
 The existing monitor distribution, its ACM certificates, and its DNS records are not imported into or modified by this stack.
 
@@ -24,7 +24,7 @@ Run from the repository root:
 pnpm --dir web run build
 pnpm --dir infra exec cdk synth --strict
 pnpm --dir infra exec cdk diff --profile sso-admin-profile
-pnpm --dir infra exec cdk deploy --profile sso-admin-profile --require-approval broadening
+pnpm --dir infra exec cdk deploy --all --profile sso-admin-profile --require-approval broadening
 ```
 
 The Tokyo account environment is already bootstrapped at version 32. Bootstrap `us-east-1` once before the first deploy:
@@ -48,7 +48,7 @@ Content-Type: application/json
 
 Use `create`, `update`, or `delete` for `changeType`. The token is stored in the `sveltekit-blog/runtime` Secrets Manager secret; it is not included in the repository or API Gateway logs. This endpoint is intentionally callable outside CloudFront. The main blog API continues to require the CloudFront origin header, and its `/rpc/federation-admin/*` route is no longer exposed there.
 
-After the first successful manual deploy, GitHub Actions can assume `sveltekit-blog-github-deploy` through OIDC. That role is deliberately restricted to the repository's `main` branch and to the CDK bootstrap roles in the two deployment regions.
+After the first successful manual deploy, GitHub Actions can assume `sveltekit-blog-github-deploy` through OIDC. That role is deliberately restricted to `nagutabby/blog`'s `main` branch and to the CDK bootstrap roles in the two deployment regions.
 
 ## State safety
 

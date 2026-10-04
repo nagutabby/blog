@@ -1,4 +1,4 @@
-# astro-svelte-blog
+# blog
 
 Astro + Svelte (`web/`)で構築したブログです。フロントエンドは静的出力し、AWS 上の CloudFront と S3 から配信します。Hono API は Lambda と API Gateway で動作します。
 

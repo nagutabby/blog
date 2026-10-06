@@ -20,8 +20,6 @@ The existing monitor distribution, its ACM certificates, and its DNS records are
 
 Run from the repository root:
 
-For an existing production account, follow the resource migration runbook before the first deploy. GitHub Actions skips the deploy step until `BLOG_RESOURCE_MIGRATION_READY=true` is set after the new deployment role and stack are verified.
-
 ```sh
 pnpm --dir web run build
 pnpm --dir infra exec cdk synth --strict
@@ -55,9 +53,3 @@ After the new deploy role has been created, GitHub Actions can assume `blog-gith
 ## State safety
 
 The production stack has termination protection. DynamoDB tables, logs, buckets, and secrets use retain policies; the tables also have deletion protection and point-in-time recovery. Review every `cdk diff` before deployment. The only DNS records managed by this stack are `blog.app.nagutabby.uk` A and AAAA aliases plus the ACM validation record.
-
-## Resource rename migration
-
-The `Blog` and `BlogEdgeCertificate` stacks and `blog-*` resource names are the target state. The migration prepares new resources first, copies and verifies DynamoDB and Secrets Manager data, and syncs the current site objects. The old stacks are then deleted and the new stacks deployed with the same public domain. CloudFront's distribution ID and certificate ARN change, and the site is unavailable while the replacement distribution is deployed. Rollback tables, secrets, and site data were deleted on 2026-10-04 after full data comparison and an explicit cleanup request.
-
-Use the production migration checklist in [`RESOURCE-RENAME.md`](./RESOURCE-RENAME.md). The GitHub OIDC provider is shared by both deploy roles and remains in IAM when the old stack is removed.

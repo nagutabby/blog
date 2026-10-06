@@ -35,7 +35,7 @@ Worker は `http://localhost:8787` で起動します。ローカル D1 のス�
 
 東京リージョンの CDK bootstrap は version 32 です。CloudFront 証明書を作る `us-east-1` は初回デプロイ前に bootstrap してください。
 
-この手順は未構築アカウント用です。既存の本番環境へ最終テンプレートを直接デプロイしないでください。リソース名の移行を [`infra/RESOURCE-RENAME.md`](../infra/RESOURCE-RENAME.md) に沿って完了してください。
+この手順は未構築アカウント用です。既存の本番環境（`Blog` スタックが稼働中）には `cdk diff` を確認してからデプロイしてください。
 
 ```sh
 aws sso login --profile sso-admin-profile
@@ -86,7 +86,3 @@ pnpm --dir backend exec wrangler deploy --config wrangler.redirect.jsonc
 - D1 のバックアップと DynamoDB の件数・内容・状態・日時・索引件数が一致
 
 `nagutabby.uk` の Cloudflare DNS ゾーンは他のレコードを維持するため残しています。旧ホストには転送専用 Worker を設定し、旧 URL は `blog.app.nagutabby.uk` へ301転送します。現行サイトは `blog.app.nagutabby.uk` です。
-
-## AWS リソース名の移行
-
-本番のスタック名とリソース名を `blog` に揃える移行手順は [`infra/RESOURCE-RENAME.md`](../infra/RESOURCE-RENAME.md) を参照してください。スタック refactor、データ複製、CloudFront 切替、旧リソースの削除を段階的に行い、切替後7日間は旧リソースを保持します。

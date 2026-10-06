@@ -37,20 +37,17 @@ const githubOidcProviderArn = `arn:aws:iam::${account}:oidc-provider/token.actio
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 export interface BlogStackProps extends StackProps {
-  edgeCertificate?: import('aws-cdk-lib/aws-certificatemanager').ICertificate;
-  deployPublicEdge: boolean;
+  edgeCertificate: import('aws-cdk-lib/aws-certificatemanager').ICertificate;
 }
 
 export class BlogStack extends Stack {
   constructor(scope: Construct, id: string, props: BlogStackProps) {
     super(scope, id, props);
 
-    const hostedZone = props.deployPublicEdge
-      ? route53.HostedZone.fromHostedZoneAttributes(this, 'AppHostedZone', {
-          hostedZoneId: zoneId,
-          zoneName
-        })
-      : undefined;
+    const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'AppHostedZone', {
+      hostedZoneId: zoneId,
+      zoneName
+    });
 
     const followerTable = new dynamodb.Table(this, 'Followers', {
       tableName: 'blog-followers',
@@ -282,75 +279,66 @@ export class BlogStack extends Stack {
       responseHeadersPolicy: cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS
     };
 
-    if (props.deployPublicEdge && !props.edgeCertificate) {
-      throw new Error('edgeCertificate is required when deployPublicEdge is enabled');
-    }
-
-    const distribution = props.deployPublicEdge
-      ? new cloudfront.Distribution(this, 'BlogDistribution', {
-          comment: 'Static blog and Hono API for blog.app.nagutabby.uk',
-          domainNames: [siteDomain],
-          certificate: props.edgeCertificate!,
-          minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
-          sslSupportMethod: cloudfront.SSLMethod.SNI,
-          defaultRootObject: 'index.html',
-          defaultBehavior: {
-            origin: S3BucketOrigin.withOriginAccessControl(siteBucket),
-            allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-            cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
-            cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-            responseHeadersPolicy: cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS,
-            functionAssociations: [{
-              eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
-              function: staticFunction
-            }]
-          },
-          errorResponses: [
-            { httpStatus: 403, responseHttpStatus: 404, responsePagePath: '/404.html', ttl: Duration.seconds(0) },
-            { httpStatus: 404, responseHttpStatus: 404, responsePagePath: '/404.html', ttl: Duration.seconds(0) }
-          ],
-          httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
-          enableIpv6: true
-        })
-      : undefined;
-
-    if (distribution) {
-      distribution.addBehavior('/actor/inbox', apiOrigin, {
-        ...apiBehavior,
+    const distribution = new cloudfront.Distribution(this, 'BlogDistribution', {
+      comment: 'Static blog and Hono API for blog.app.nagutabby.uk',
+      domainNames: [siteDomain],
+      certificate: props.edgeCertificate,
+      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+      sslSupportMethod: cloudfront.SSLMethod.SNI,
+      defaultRootObject: 'index.html',
+      defaultBehavior: {
+        origin: S3BucketOrigin.withOriginAccessControl(siteBucket),
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        responseHeadersPolicy: cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS,
         functionAssociations: [{
           eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
-          function: blockInboxFunction
+          function: staticFunction
         }]
-      });
-      distribution.addBehavior('/rpc/*', apiOrigin, apiBehavior);
-      distribution.addBehavior('/.well-known/*', apiOrigin, apiBehavior);
-      distribution.addBehavior('/nodeinfo/*', apiOrigin, apiBehavior);
-      distribution.addBehavior('/actor*', apiOrigin, apiBehavior);
-      distribution.addBehavior('/api/articles/*', apiOrigin, apiBehavior);
-      distribution.addBehavior('/healthz', apiOrigin, apiBehavior);
-    }
+      },
+      errorResponses: [
+        { httpStatus: 403, responseHttpStatus: 404, responsePagePath: '/404.html', ttl: Duration.seconds(0) },
+        { httpStatus: 404, responseHttpStatus: 404, responsePagePath: '/404.html', ttl: Duration.seconds(0) }
+      ],
+      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
+      enableIpv6: true
+    });
+
+    distribution.addBehavior('/actor/inbox', apiOrigin, {
+      ...apiBehavior,
+      functionAssociations: [{
+        eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+        function: blockInboxFunction
+      }]
+    });
+    distribution.addBehavior('/rpc/*', apiOrigin, apiBehavior);
+    distribution.addBehavior('/.well-known/*', apiOrigin, apiBehavior);
+    distribution.addBehavior('/nodeinfo/*', apiOrigin, apiBehavior);
+    distribution.addBehavior('/actor*', apiOrigin, apiBehavior);
+    distribution.addBehavior('/api/articles/*', apiOrigin, apiBehavior);
+    distribution.addBehavior('/healthz', apiOrigin, apiBehavior);
 
     new s3deploy.BucketDeployment(this, 'DeployStaticSite', {
       sources: [s3deploy.Source.asset(path.join(repoRoot, 'web/dist'))],
       destinationBucket: siteBucket,
-      ...(distribution ? { distribution, distributionPaths: ['/*'] } : {}),
+      distribution,
+      distributionPaths: ['/*'],
       prune: true,
       retainOnDelete: true
     });
 
-    if (distribution && hostedZone) {
-      new route53.ARecord(this, 'SiteAliasA', {
-        zone: hostedZone,
-        recordName: 'blog',
-        target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(distribution))
-      });
-      new route53.AaaaRecord(this, 'SiteAliasAAAA', {
-        zone: hostedZone,
-        recordName: 'blog',
-        target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(distribution))
-      });
-    }
+    new route53.ARecord(this, 'SiteAliasA', {
+      zone: hostedZone,
+      recordName: 'blog',
+      target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(distribution))
+    });
+    new route53.AaaaRecord(this, 'SiteAliasAAAA', {
+      zone: hostedZone,
+      recordName: 'blog',
+      target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(distribution))
+    });
 
     const provider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
       this,
@@ -377,9 +365,7 @@ export class BlogStack extends Stack {
     }));
 
     new CfnOutput(this, 'SiteUrl', { value: siteBaseURL });
-    if (distribution) {
-      new CfnOutput(this, 'DistributionId', { value: distribution.distributionId });
-    }
+    new CfnOutput(this, 'DistributionId', { value: distribution.distributionId });
     new CfnOutput(this, 'ApiGatewayEndpoint', { value: httpApi.apiEndpoint });
     new CfnOutput(this, 'ArticleNotificationApiEndpoint', {
       value: `${articleNotificationHttpApi.apiEndpoint}/rpc/federation-admin/publish-article-activity`
